@@ -35,6 +35,7 @@ const startServer = async () => {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
+};
 
 // Graceful shutdown handling
 const gracefulShutdown = (signal) => {
@@ -59,4 +60,4 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 startServer();
-}
+
