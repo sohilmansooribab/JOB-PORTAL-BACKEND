@@ -7,6 +7,12 @@ const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const { clearCachePattern } = require('../utils/cache');
 
+// Helper to escape special regex characters and protect against ReDoS
+const escapeRegex = (text) => {
+  if (typeof text !== 'string') return '';
+  return text.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 /**
  * @desc    Get system-wide metrics and analytics
  * @route   GET /api/v1/admin/analytics
@@ -83,8 +89,11 @@ const getAllUsers = asyncHandler(async (req, res) => {
   if (role) query.role = role;
   if (isBlocked !== undefined) query.isBlocked = isBlocked === 'true';
   if (search) {
-    const regex = new RegExp(search.trim(), 'i');
-    query.$or = [{ name: regex }, { email: regex }];
+    const sanitized = escapeRegex(search.trim());
+    if (sanitized) {
+      const regex = new RegExp(sanitized, 'i');
+      query.$or = [{ name: regex }, { email: regex }];
+    }
   }
 
   const [total, users] = await Promise.all([
@@ -181,8 +190,11 @@ const getAllJobs = asyncHandler(async (req, res) => {
   if (status) query.status = status;
   if (category) query.category = category;
   if (search) {
-    const regex = new RegExp(search.trim(), 'i');
-    query.$or = [{ title: regex }, { 'company.name': regex }];
+    const sanitized = escapeRegex(search.trim());
+    if (sanitized) {
+      const regex = new RegExp(sanitized, 'i');
+      query.$or = [{ title: regex }, { 'company.name': regex }];
+    }
   }
 
   const [total, jobs] = await Promise.all([
