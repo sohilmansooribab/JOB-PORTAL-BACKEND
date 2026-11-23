@@ -8,6 +8,8 @@ const path = require('path');
 const routes = require('./routes');
 const { apiLimiter } = require('./middlewares/rateLimiter.middleware');
 const { notFound, errorHandler } = require('./middlewares/error.middleware');
+const { protect } = require('./middlewares/auth.middleware');
+const userController = require('./controllers/user.controller');
 
 const app = express();
 
@@ -33,7 +35,10 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      return callback(null, true); // Permissive in dev, can restrict in production
+      if (process.env.NODE_ENV === 'production') {
+        return callback(new Error('Origin blocked by CORS policy'));
+      }
+      return callback(null, true); // Permissive in dev
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -53,8 +58,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Static files for uploaded resumes and avatars
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Static files for public avatars and company logos
+app.use('/uploads/avatars', express.static(path.join(__dirname, '../uploads/avatars')));
+
+// Secure resume access (protected by JWT authentication and authorization)
+app.get('/uploads/resumes/:filename', protect, userController.downloadResume);
 
 // General rate limiter on API endpoints
 app.use('/api', apiLimiter);
