@@ -21,7 +21,10 @@ const initSocket = (httpServer) => {
         return next(new Error('Authentication token missing'));
       }
 
-      const secret = process.env.JWT_SECRET || 'job_portal_super_secret_jwt_key_2026_secure';
+      const secret = process.env.JWT_SECRET;
+      if (!secret) {
+        return next(new Error('Server configuration error: JWT_SECRET missing'));
+      }
       const decoded = jwt.verify(token, secret);
       const user = await User.findById(decoded.id);
 
