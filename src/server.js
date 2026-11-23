@@ -5,7 +5,16 @@ const connectDB = require('./config/db');
 const { initRedis } = require('./config/redis');
 const { initSocket } = require('./sockets/socketManager');
 
-const PORT = process.env.SERVER_PORT || process.env.PORT || 5000;
+// Validate critical environment variables during startup
+const validateEnv = () => {
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim().length === 0) {
+    console.error('FATAL: JWT_SECRET environment variable is required but missing.');
+    process.exit(1);
+  }
+};
+validateEnv();
+
+const PORT = process.env.PORT || 5001;
 
 // Create HTTP server
 const server = http.createServer(app);
