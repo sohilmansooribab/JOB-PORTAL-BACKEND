@@ -15,6 +15,9 @@ const {
 // Public recruiter profile
 router.get('/recruiter/:id', userController.getRecruiterPublicProfile);
 
+// Secure resume download route
+router.get('/resume/:filename', protect, userController.downloadResume);
+
 // Authenticated routes
 router.get('/:id', protect, userController.getUserProfile);
 router.put('/profile/basic', protect, validate(updateProfileBasicSchema), userController.updateProfileBasic);
