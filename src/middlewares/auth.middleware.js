@@ -26,7 +26,10 @@ const protect = asyncHandler(async (req, res, next) => {
   // 3. Verify token
   let decoded;
   try {
-    const secret = process.env.JWT_SECRET || 'job_portal_super_secret_jwt_key_2026_secure';
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error('JWT_SECRET environment variable is not configured');
+    }
     decoded = jwt.verify(token, secret);
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -68,7 +71,8 @@ const optionalAuth = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    const secret = process.env.JWT_SECRET || 'job_portal_super_secret_jwt_key_2026_secure';
+    const secret = process.env.JWT_SECRET;
+    if (!secret) return next();
     const decoded = jwt.verify(token, secret);
     const user = await User.findById(decoded.id);
     if (user && !user.isBlocked) {
