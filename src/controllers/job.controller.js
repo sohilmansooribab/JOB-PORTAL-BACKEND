@@ -7,6 +7,12 @@ const asyncHandler = require('../utils/asyncHandler');
 const { getCache, setCache, clearCachePattern } = require('../utils/cache');
 const { broadcastNewJob } = require('../sockets/notificationSocket');
 
+// Helper to escape special regex characters and protect against ReDoS
+const escapeRegex = (text) => {
+  if (typeof text !== 'string') return '';
+  return text.slice(0, 100).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 /**
  * @desc    Create a new job posting
  * @route   POST /api/v1/jobs
@@ -76,13 +82,16 @@ const getJobs = asyncHandler(async (req, res) => {
   const query = { status: 'Active' };
 
   if (search) {
-    const searchRegex = new RegExp(search.trim(), 'i');
-    query.$or = [
-      { title: searchRegex },
-      { description: searchRegex },
-      { 'company.name': searchRegex },
-      { skillsRequired: { $in: [searchRegex] } },
-    ];
+    const sanitizedSearch = escapeRegex(search.trim());
+    if (sanitizedSearch) {
+      const searchRegex = new RegExp(sanitizedSearch, 'i');
+      query.$or = [
+        { title: searchRegex },
+        { description: searchRegex },
+        { 'company.name': searchRegex },
+        { skillsRequired: { $in: [searchRegex] } },
+      ];
+    }
   }
 
   if (category) {
@@ -102,7 +111,10 @@ const getJobs = asyncHandler(async (req, res) => {
   }
 
   if (location) {
-    query.location = new RegExp(location.trim(), 'i');
+    const sanitizedLocation = escapeRegex(location.trim());
+    if (sanitizedLocation) {
+      query.location = new RegExp(sanitizedLocation, 'i');
+    }
   }
 
   if (minSalary || maxSalary) {
@@ -236,7 +248,30 @@ const updateJob = asyncHandler(async (req, res) => {
     throw ApiError.forbidden('You are not authorized to update this job posting.');
   }
 
-  Object.assign(job, req.body);
+  // Whitelist editable fields to prevent mass assignment
+  const allowedFields = [
+    'title',
+    'description',
+    'location',
+    'workplaceType',
+    'jobType',
+    'experienceLevel',
+    'category',
+    'salary',
+    'skillsRequired',
+    'responsibilities',
+    'requirements',
+    'benefits',
+    'deadline',
+    'status',
+  ];
+
+  allowedFields.forEach((field) => {
+    if (req.body[field] !== undefined) {
+      job[field] = req.body[field];
+    }
+  });
+
   await job.save();
 
   // Invalidate cache
