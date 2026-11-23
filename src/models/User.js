@@ -138,7 +138,10 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
 
 // Generate JWT token method
 userSchema.methods.generateAuthToken = function () {
-  const secret = process.env.JWT_SECRET || 'job_portal_super_secret_jwt_key_2026_secure';
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('FATAL: JWT_SECRET environment variable is missing.');
+  }
   const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
 
   return jwt.sign(
