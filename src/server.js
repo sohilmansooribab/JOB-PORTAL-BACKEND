@@ -5,7 +5,7 @@ const connectDB = require('./config/db');
 const { initRedis } = require('./config/redis');
 const { initSocket } = require('./sockets/socketManager');
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.SERVER_PORT || process.env.PORT || 5000;
 
 // Create HTTP server
 const server = http.createServer(app);
