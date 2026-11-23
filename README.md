@@ -10,10 +10,13 @@ A high-performance, secure, and production-ready RESTful backend API and real-ti
 - [Key Features](#-key-features)
 - [Technology Stack](#-technology-stack)
 - [System Architecture & Folder Structure](#-system-architecture--folder-structure)
+- [Database ER Design](#-database-er-design)
+- [Roles & Permissions (RBAC)](#-roles--permissions-rbac)
+- [Application Status Pipeline (ATS)](#-application-status-pipeline-ats)
 - [Prerequisites](#-prerequisites)
 - [Installation & Setup](#-installation--setup)
 - [Environment Variables](#-environment-variables)
-- [Database Seeding & Test Accounts](#-database-seeding--test-accounts)
+- [Database Seeding & Test Credentials](#-database-seeding--test-credentials)
 - [Running the Server](#-running-the-server)
 - [WebSocket & Real-Time Events](#-websocket--real-time-events)
 - [Comprehensive API Reference](#-comprehensive-api-reference)
@@ -27,8 +30,9 @@ A high-performance, secure, and production-ready RESTful backend API and real-ti
   - [Reports & Moderation (`/reports`)](#8-reports--moderation-apiv1reports)
   - [Admin Panel & Analytics (`/admin`)](#9-admin-panel--analytics-apiv1admin)
 - [Standard API Response Format](#-standard-api-response-format)
-- [Security & Rate Limiting](#-security--rate-limiting)
-- [Testing](#-testing)
+- [Security Features & Hardening](#-security-features--hardening)
+- [Testing & Quality Assurance](#-testing--quality-assurance)
+- [Deployment Instructions](#-deployment-instructions)
 - [License](#-license)
 
 ---
@@ -37,8 +41,8 @@ A high-performance, secure, and production-ready RESTful backend API and real-ti
 
 The Job Portal Backend provides a full-featured infrastructure connecting **Candidates**, **Recruiters**, and **Administrators**:
 
-- **Candidates** can browse and filter verified job openings, save jobs for later, submit applications with custom cover letters and resume uploads (PDF/DOCX), track application review statuses in real-time, and manage extensive professional profiles.
-- **Recruiters** can post detailed job openings, manage candidates through an Applicant Tracking System (ATS), shortlist/accept/reject applications with feedback notes, view applicant resumes, and track job engagement statistics.
+- **Candidates** can browse and filter verified job openings, bookmark jobs for later, submit applications with custom cover letters and resume uploads (PDF/DOCX), track application review statuses in real-time, withdraw unreviewed applications, and manage extensive professional profiles.
+- **Recruiters** can post detailed job openings, manage candidates through an Applicant Tracking System (ATS), shortlist/interview/select/reject applications with feedback notes, securely view applicant resumes, and track job engagement statistics.
 - **Administrators** have complete system oversight: analytics dashboards (users, jobs, applications breakdown), user management (blocking/unblocking, deletion), job moderation, and abuse report resolution.
 
 ---
@@ -46,16 +50,17 @@ The Job Portal Backend provides a full-featured infrastructure connecting **Cand
 ## ⚡ Key Features
 
 - **🔐 Multi-Role Authentication & RBAC**: Strict Role-Based Access Control (`candidate`, `recruiter`, `admin`) with JWT (in Authorization Header or HTTP-only cookie) and `bcryptjs` password hashing.
+- **🛡️ Hardened Security Posture**:
+  - Zero hardcoded fallback secrets: startup environment validation strictly requires `JWT_SECRET`.
+  - IDOR protection: candidate profiles and resumes can only be accessed by the owner, authorized reviewing recruiters, or admins.
+  - Mass assignment protection: job update fields are strictly whitelisted to protect recruiter ownership and internal metrics.
+  - ReDoS defense: regex search inputs are sanitized against metacharacters with string length limits.
+  - Secure cookie clearing on logout with matching `secure`, `httpOnly`, and `sameSite` attributes.
 - **📑 Job Lifecycle & Search Engine**: Rich job queries with keyword search, category, workplace type (`Remote`, `Hybrid`, `On-site`), employment type, experience level, salary range filtering, pagination, and sorting.
-- **📈 Applicant Tracking System (ATS)**: Multi-stage application status pipeline (`Pending` ➔ `Reviewing` ➔ `Shortlisted` ➔ `Accepted` / `Rejected`) with internal recruiter notes and candidate feedback.
+- **📈 Applicant Tracking System (ATS)**: Multi-stage application status pipeline (`Applied → Shortlisted → Interview → Selected / Rejected`) with internal recruiter notes and candidate feedback.
 - **⚡ Real-Time Push Alerts (Socket.io)**: Authenticated WebSocket server delivering instant notifications to candidate/recruiter private rooms and broadcast channels on new applications, status updates, and new job postings.
-- **🚀 Redis Caching with Graceful Fallback**: High-speed caching for public job feeds and categories using `ioredis`. If Redis is unavailable, the application gracefully falls back to database queries without interruption.
-- **📁 File Uploads (Multer & Cloudinary)**: Resume uploads (PDF/DOCX up to 5MB) and profile avatars (JPG/PNG/WEBP up to 2MB) with local disk storage and optional Cloudinary cloud storage integration.
-- **🛡️ Defensive Security & Guardrails**:
-  - Request payload validation using **Zod** schemas.
-  - Granular API rate limiting (**express-rate-limit**) across auth, uploads, and general API routes.
-  - HTTP header protection via **Helmet**.
-  - Cross-Origin Resource Sharing (**CORS**) configuration with credential support.
+- **🚀 Redis Caching with Graceful Fallback**: High-speed caching for public job feeds and categories using `ioredis`. If Redis is offline, the application seamlessly falls back to an in-memory cache with an automated 5-minute eviction sweeper.
+- **📁 Secure File Uploads (Multer)**: Resume uploads (PDF/DOC/DOCX up to 5MB) and profile avatars (JPG/PNG/WEBP up to 3MB) with authenticated access control on resumes.
 
 ---
 
@@ -71,8 +76,8 @@ The Job Portal Backend provides a full-featured infrastructure connecting **Cand
 | **WebSockets** | Socket.io | `^4.8.4` | Bi-directional real-time event streaming |
 | **Auth / Crypto** | jsonwebtoken, bcryptjs | `^9.0.3`, `^3.0.3` | JWT generation/verification & secure hashing |
 | **Validation** | Zod | `^4.6.7` | Type-safe declarative schema validation |
-| **File Uploads** | Multer, Cloudinary | `^2.5.0`, `^2.11.0` | Multipart form-data handling & cloud storage |
-| **Security** | Helmet, CORS, Express Rate Limit | `^8.3.0`, `^2.8.6`, `^8.7.2`| HTTP security headers, CORS & DDoS protection |
+| **File Uploads** | Multer | `^2.5.0` | Multipart form-data handling with MIME checks |
+| **Security** | Helmet, CORS, Express Rate Limit | `^8.3.0`, `^2.8.6`, `^8.7.2` | HTTP security headers, CORS & DDoS protection |
 | **Logging** | Morgan | `^1.12.1` | HTTP request logging |
 
 ---
@@ -81,12 +86,12 @@ The Job Portal Backend provides a full-featured infrastructure connecting **Cand
 
 ```
 JOB PORTAL BACKEND/
-├── uploads/                        # Static uploads directory
-│   ├── avatars/                    # User profile pictures
-│   └── resumes/                    # Candidate resume files
+├── uploads/                        # Static and private uploads directory
+│   ├── avatars/                    # Public user profile pictures & company logos
+│   └── resumes/                    # Secure candidate resume documents
 ├── src/
 │   ├── config/                     # Infrastructure configuration
-│   │   ├── cloudinary.js           # Cloudinary SDK client setup
+│   │   ├── cloudinary.js           # Optional Cloudinary SDK client setup
 │   │   ├── db.js                   # Mongoose MongoDB connection & error listeners
 │   │   └── redis.js                # ioredis client initialization & fallback handling
 │   ├── controllers/                # Request processing and business logic
@@ -97,7 +102,7 @@ JOB PORTAL BACKEND/
 │   │   ├── notification.controller.js# In-app notifications & read receipts
 │   │   ├── report.controller.js      # Abuse and fraud reporting
 │   │   ├── savedJob.controller.js    # Candidate bookmarked / saved jobs
-│   │   └── user.controller.js        # Profile management and resume/avatar uploads
+│   │   └── user.controller.js        # Profile management and secure resume access
 │   ├── middlewares/                # Express middleware chain
 │   │   ├── auth.middleware.js        # JWT token verification (protect & optionalAuth)
 │   │   ├── error.middleware.js       # 404 handler and centralized JSON error responder
@@ -124,7 +129,7 @@ JOB PORTAL BACKEND/
 │   │   └── user.routes.js            # /api/v1/users
 │   ├── scripts/                    # Utilities and automated tests
 │   │   ├── seed.js                   # Database seeder with mock users, jobs & applications
-│   │   └── testEndpoints.js          # Comprehensive API test runner
+│   │   └── testEndpoints.js          # Automated 27-flow test suite runner
 │   ├── sockets/                    # WebSocket real-time communication
 │   │   ├── notificationSocket.js     # Helper methods to dispatch real-time events
 │   │   └── socketManager.js          # Socket.io connection handshake & room management
@@ -132,7 +137,7 @@ JOB PORTAL BACKEND/
 │   │   ├── apiError.js               # Standardized ApiError class
 │   │   ├── apiResponse.js            # Standardized ApiResponse formatter
 │   │   ├── asyncHandler.js           # Async controller wrapper catching rejections
-│   │   └── cache.js                  # Redis get/set/del wrapper with memory fallback
+│   │   └── cache.js                  # Redis wrapper with in-memory TTL eviction sweeper
 │   ├── validations/                # Zod validation schema contracts
 │   │   ├── application.validation.js
 │   │   ├── auth.validation.js
@@ -140,7 +145,7 @@ JOB PORTAL BACKEND/
 │   │   ├── report.validation.js
 │   │   └── user.validation.js
 │   ├── app.js                      # Express app assembly, middleware, and routes
-│   └── server.js                   # HTTP + WebSocket server bootstrap and graceful shutdown
+│   └── server.js                   # Server bootstrap, startup validation & graceful shutdown
 ├── .env.example                    # Environment variable template
 ├── .gitignore
 ├── package.json
@@ -149,68 +154,134 @@ JOB PORTAL BACKEND/
 
 ---
 
-## 📦 Prerequisites
+## 🗃️ Database ER Design
 
-Ensure you have the following installed on your machine:
-
-- **Node.js**: `v18.0.0` or higher
-- **npm**: `v9.0.0` or higher
-- **MongoDB**: Local MongoDB instance running on port `27017` or a MongoDB Atlas connection URI
-- **Redis** *(Optional but recommended)*: Redis server running on port `6379`
+```
++-------------------------------------------------------------+
+|                            USER                             |
++-------------------------------------------------------------+
+| _id (ObjectId, PK)                                          |
+| name (String)                                               |
+| email (String, Unique)                                      |
+| password (String, Hashed, Hidden)                           |
+| role (Enum: 'candidate' | 'recruiter' | 'admin')            |
+| phone, location, avatar (String)                            |
+| isBlocked (Boolean)                                         |
+| candidateProfile: { headline, bio, skills, exp, edu, ... }  |
+| recruiterProfile: { companyName, website, desc, logo, ... } |
++-------------------------------------------------------------+
+       | 1                                              | 1
+       | creates                                        | submits
+       v *                                              v *
++-------------------------------+             +-------------------------------+
+|              JOB              |             |          APPLICATION          |
++-------------------------------+             +-------------------------------+
+| _id (ObjectId, PK)            |             | _id (ObjectId, PK)            |
+| recruiter (Ref: User, FK)     | 1         * | job (Ref: Job, FK)            |
+| title, description, category  |<------------| candidate (Ref: User, FK)     |
+| location, workplaceType       |             | recruiter (Ref: User, FK)     |
+| jobType, experienceLevel      |             | resumeUrl, coverLetter        |
+| salary: { min, max, currency }|             | status: Applied|Shortlisted|  |
+| skillsRequired: [String]      |             |         Interview|Selected|   |
+| applicationsCount, viewsCount |             |         Rejected              |
+| status: Active|Closed|Draft   |             | recruiterNotes (Hidden)       |
++-------------------------------+             | feedback (String)             |
+       | 1                                    +-------------------------------+
+       | bookmarked                                 [Compound Unique Index]
+       v *                                          candidate + job
++-------------------------------+
+|           SAVEDJOB            |
++-------------------------------+
+| _id (ObjectId, PK)            |
+| candidate (Ref: User, FK)     |
+| job (Ref: Job, FK)            |
++-------------------------------+
+[Compound Unique Index]
+candidate + job
+```
 
 ---
 
-## 🚀 Installation & Setup
+## 🔒 Roles & Permissions (RBAC)
 
-### 1. Clone the repository
-```bash
-git clone <repository-url>
-cd "JOB PORTAL BACKEND"
+| Resource / Action | Public / Guest | Candidate | Recruiter | Administrator |
+| :--- | :---: | :---: | :---: | :---: |
+| Browse & Search Active Jobs | ✅ | ✅ | ✅ | ✅ |
+| View Public Recruiter Profile | ✅ | ✅ | ✅ | ✅ |
+| Register / Login | ✅ | ✅ | ✅ | — |
+| Update Candidate Profile | ❌ | ✅ | ❌ | ❌ |
+| Update Recruiter Profile | ❌ | ❌ | ✅ | ❌ |
+| Upload / Download Resume | ❌ | ✅ (Own) | ✅ (Applicants) | ✅ (All) |
+| Post New Job | ❌ | ❌ | ✅ | ❌ |
+| Update / Delete Job | ❌ | ❌ | ✅ (Own jobs) | ✅ (All jobs) |
+| Apply to Job | ❌ | ✅ | ❌ | ❌ |
+| View Application Status | ❌ | ✅ (Own apps) | ✅ (Own jobs) | ✅ (All) |
+| Advance ATS Status Pipeline | ❌ | ❌ | ✅ (Own jobs) | ✅ (All) |
+| Withdraw Application | ❌ | ✅ (Applied/Pending) | ❌ | ❌ |
+| Bookmark / Save Jobs | ❌ | ✅ | ❌ | ❌ |
+| View System Analytics | ❌ | ❌ | ❌ | ✅ |
+| Block / Unblock Users | ❌ | ❌ | ❌ | ✅ |
+| Moderate Abusive Reports | ❌ | ❌ | ❌ | ✅ |
+
+---
+
+## 📊 Application Status Pipeline (ATS)
+
+```
+       [Candidate Applies]
+                │
+                ▼
+            Applied  ─────── (Candidate can withdraw)
+                │
+                ▼
+           Shortlisted
+                │
+                ▼
+            Interview
+             │     │
+   ┌─────────┘     └─────────┐
+   ▼                         ▼
+Selected                  Rejected
 ```
 
-### 2. Install dependencies
-```bash
-npm install
-```
+---
 
-### 3. Configure Environment Variables
-Create a `.env` file in the project root by copying `.env.example`:
-```bash
-cp .env.example .env
-```
-Update `.env` with your local or cloud database credentials, JWT secrets, and client URLs.
+## 📦 Prerequisites
+
+Ensure you have the following installed:
+- **Node.js**: `v18.0.0` or higher
+- **npm**: `v9.0.0` or higher
+- **MongoDB**: Running locally on port `27017` or a MongoDB Atlas URI
+- **Redis** *(Optional)*: Server running on port `6379` (application automatically falls back to an in-memory cache if offline)
 
 ---
 
 ## ⚙️ Environment Variables
 
+Copy `.env.example` to `.env`:
+
+```bash
+cp .env.example .env
+```
+
 | Variable | Required | Default Value | Description |
 | :--- | :---: | :--- | :--- |
-| `PORT` | No | `5000` | Port on which the Express server listens |
-| `NODE_ENV` | No | `development` | Environment mode (`development` or `production`) |
+| `PORT` | Yes | `5001` | Port on which the Express server listens |
+| `NODE_ENV` | Yes | `development` | Environment mode (`development` or `production`) |
 | `CLIENT_URL` | Yes | `http://localhost:5173` | Allowed frontend origin for CORS and WebSockets |
 | `MONGODB_URI` | Yes | `mongodb://127.0.0.1:27017/job_portal` | MongoDB connection URI |
-| `JWT_SECRET` | Yes | `job_portal_super_secret_jwt_key_...` | Secret key used to sign and verify JWT tokens |
+| `JWT_SECRET` | Yes | *Required (No fallback)* | Secret key used to sign and verify JWT tokens |
 | `JWT_EXPIRES_IN` | No | `7d` | Lifetime of the issued JWT token |
-| `JWT_COOKIE_EXPIRES_IN`| No | `7` | Lifetime of authentication cookie (in days) |
+| `JWT_COOKIE_EXPIRES_IN` | No | `7` | Lifetime of authentication cookie (in days) |
 | `REDIS_URL` | No | `redis://127.0.0.1:6379` | Redis host connection string |
-| `REDIS_ENABLED` | No | `true` | Set to `false` to disable Redis caching |
-| `CLOUDINARY_CLOUD_NAME`| No | *None* | Cloudinary account Cloud Name (optional) |
-| `CLOUDINARY_API_KEY` | No | *None* | Cloudinary API Key (optional) |
-| `CLOUDINARY_API_SECRET`| No | *None* | Cloudinary API Secret (optional) |
+| `REDIS_ENABLED` | No | `false` | Set to `false` for in-memory cache fallback |
 
 ---
 
-## 👥 Database Seeding & Test Accounts
+## 👥 Database Seeding & Test Credentials
 
-The project includes an automated database seeder (`src/scripts/seed.js`) that populates the database with realistic sample data:
-- 1 Super Admin
-- 2 Recruiters with populated company profiles
-- 3 Candidates with full career histories, skills, and resumes
-- 6 Realistic job postings (Frontend, Backend, DevOps, Design, Product, AI)
-- Multiple realistic applications, saved jobs, notifications, and reports.
+Populate the database with verified sample data (Admin, Recruiters, Candidates, Jobs, Applications, Saved Jobs, Notifications):
 
-To seed the database, run:
 ```bash
 npm run seed
 ```
@@ -224,7 +295,6 @@ npm run seed
 | **Recruiter** | David Miller | `david.recruiter@cloudscale.net` | `RecruiterPassword123!` | CloudScale Networks |
 | **Candidate** | Alex Johnson | `alex.candidate@example.com` | `CandidatePassword123!` | Senior Full-Stack Engineer |
 | **Candidate** | Emily Davis | `emily.candidate@example.com` | `CandidatePassword123!` | Frontend Engineer |
-| **Candidate** | Michael Chang| `michael.candidate@example.com`| `CandidatePassword123!` | DevOps & Cloud Engineer |
 
 ---
 
@@ -240,23 +310,21 @@ npm run dev
 npm start
 ```
 
-Once started:
-- **API Base URL**: `http://localhost:5000/api/v1`
-- **Health Check**: `http://localhost:5000/api/v1/health`
-- **WebSocket Endpoint**: `ws://localhost:5000`
+- **API Base URL**: `http://localhost:5001/api/v1`
+- **Health Check**: `http://localhost:5001/api/v1/health`
+- **WebSocket Endpoint**: `ws://localhost:5001`
 
 ---
 
 ## ⚡ WebSocket & Real-Time Events
 
-Real-time capabilities are powered by **Socket.io** on the same HTTP port.
+Real-time notifications are powered by **Socket.io** on port `5001`.
 
 ### Connection & Authentication
-Clients must provide a valid JWT either via `auth.token` or the `token` query param during handshake:
 ```javascript
 import { io } from "socket.io-client";
 
-const socket = io("http://localhost:5000", {
+const socket = io("http://localhost:5001", {
   auth: {
     token: "<YOUR_JWT_TOKEN>"
   },
@@ -264,18 +332,18 @@ const socket = io("http://localhost:5000", {
 });
 ```
 
-### Automatic Room Assignments
-Upon authentication, the socket joins:
-- `user_<userId>`: For private in-app notifications and alerts.
-- `recruiter_<userId>`: For recruiter-specific application updates.
-- `admin_channel`: For administrators to receive moderation alerts.
+### Automatic Rooms
+- `user_<userId>`: Private notifications for individual users.
+- `recruiter_<userId>`: Application alerts for recruiters.
+- `admin_channel`: Moderation alerts for administrators.
 
-### Event Catalog
+### Real-Time Event Catalog
 
 | Event Name | Direction | Payload | Description |
 | :--- | :--- | :--- | :--- |
-| `notification:new` | Server ➔ Client | Notification object | Dispatched to `user_<recipientId>` upon status change, new application, or system notice |
-| `job:new` | Server ➔ Broadcast | Job object | Broadcast to all connected clients when a new job is published |
+| `notification:new` | Server ➔ Client | Notification object | Dispatched to `user_<recipientId>` upon status change or application |
+| `job:new` | Server ➔ Broadcast | Job object | Broadcast to all clients when a new job is posted |
+| `report:new` | Server ➔ Admin Channel | Report object | Alert sent to `admin_channel` when an abuse report is filed |
 
 ---
 
@@ -302,19 +370,6 @@ All routes are prefixed with `/api/v1`.
 | `GET` | `/auth/me` | Authenticated | Get current authenticated user profile |
 | `PUT` | `/auth/update-password` | Authenticated | Change account password |
 
-#### Register Request Example:
-```json
-POST /api/v1/auth/register
-{
-  "name": "Jane Doe",
-  "email": "jane@example.com",
-  "password": "SecurePassword123!",
-  "role": "candidate",
-  "phone": "+1 555-0199",
-  "location": "San Francisco, CA"
-}
-```
-
 ---
 
 ### 3. User & Profile Management (`/api/v1/users`)
@@ -322,9 +377,10 @@ POST /api/v1/auth/register
 | Method | Endpoint | Access | Description |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/users/recruiter/:id` | Public | View public profile of a recruiter/company |
-| `GET` | `/users/:id` | Authenticated | Get user profile by user ID |
+| `GET` | `/users/resume/:filename` | Authenticated | Secure download/viewing of candidate resume |
+| `GET` | `/users/:id` | Authenticated | Get user profile (Protected: own profile, applicant, or admin) |
 | `PUT` | `/users/profile/basic` | Authenticated | Update basic user details (name, phone, location) |
-| `PUT` | `/users/profile/candidate` | Candidate | Update candidate profile (bio, skills, experience, education, links) |
+| `PUT` | `/users/profile/candidate` | Candidate | Update candidate profile (bio, skills, experience, education) |
 | `PUT` | `/users/profile/recruiter` | Recruiter | Update company profile (companyName, website, bio, size) |
 | `POST` | `/users/upload-resume` | Candidate | Upload resume document (`multipart/form-data`, field: `resume`) |
 | `POST` | `/users/upload-avatar` | Authenticated | Upload profile avatar (`multipart/form-data`, field: `avatar`) |
@@ -340,22 +396,9 @@ POST /api/v1/auth/register
 | `GET` | `/jobs/recruiter/my-jobs` | Recruiter | List all jobs created by the authenticated recruiter |
 | `GET` | `/jobs/:id` | Public | Get detailed job view by ID (increments view count) |
 | `POST` | `/jobs` | Recruiter | Create a new job posting |
-| `PUT` | `/jobs/:id` | Recruiter / Admin | Update existing job |
-| `DELETE`| `/jobs/:id` | Recruiter / Admin | Delete job |
-| `POST` | `/jobs/:jobId/apply` | Candidate | Submit job application (`multipart/form-data` with resume & cover letter) |
-
-#### Job Query Parameters (`GET /api/v1/jobs`):
-- `search`: Keyword search matching title, description, company name, or skills
-- `category`: Filter by category (e.g. `Engineering`, `Design`, `DevOps`)
-- `workplaceType`: `Remote` \| `Hybrid` \| `On-site`
-- `jobType`: `Full-time` \| `Part-time` \| `Contract` \| `Internship`
-- `experienceLevel`: `Entry Level` \| `Mid Level` \| `Senior Level` \| `Lead / Principal`
-- `minSalary` & `maxSalary`: Filter by salary range
-- `location`: Filter by location
-- `page`: Page number (default: `1`)
-- `limit`: Results per page (default: `10`, max: `50`)
-- `sortBy`: Sorting field (`createdAt`, `salary.max`, `applicationsCount`, `viewsCount`)
-- `sortOrder`: `asc` or `desc` (default: `desc`)
+| `PUT` | `/jobs/:id` | Recruiter (Owner) / Admin | Update existing job (whitelisted editable fields) |
+| `DELETE`| `/jobs/:id` | Recruiter (Owner) / Admin | Delete job |
+| `POST` | `/jobs/:jobId/apply` | Candidate | Submit job application (`resumeUrl` & `coverLetter`) |
 
 ---
 
@@ -365,9 +408,9 @@ POST /api/v1/auth/register
 | :--- | :--- | :--- | :--- |
 | `GET` | `/applications/my-applications` | Candidate | List all applications submitted by candidate |
 | `GET` | `/applications/recruiter` | Recruiter | List all applications submitted to recruiter's jobs |
-| `GET` | `/applications/:id` | Authenticated | View application details (Applicant or Recruiter) |
-| `PATCH`| `/applications/:id/status` | Recruiter / Admin | Update application status (`Pending`, `Reviewing`, `Shortlisted`, `Rejected`, `Accepted`) |
-| `DELETE`| `/applications/:id` | Candidate | Withdraw submitted application |
+| `GET` | `/applications/:id` | Authenticated | View application details (Applicant, Recruiter, or Admin) |
+| `PATCH`| `/applications/:id/status` | Recruiter (Owner) / Admin | Advance status: `Applied` ➔ `Shortlisted` ➔ `Interview` ➔ `Selected`/`Rejected` |
+| `DELETE`| `/applications/:id` | Candidate | Withdraw application (allowed if status is `Applied` or `Pending`) |
 
 ---
 
@@ -413,14 +456,12 @@ POST /api/v1/auth/register
 | `DELETE`| `/admin/users/:id` | Permanently remove a user account |
 | `GET` | `/admin/jobs` | View all jobs across the platform including inactive |
 | `DELETE`| `/admin/jobs/:id` | Admin delete job posting |
-| `GET` | `/admin/reports` | View all reported items with status filter (`Pending`, `Investigating`, `Resolved`, `Dismissed`) |
+| `GET` | `/admin/reports` | View all reported items with status filter (`Pending`, `Reviewed`, `Resolved`, `Dismissed`) |
 | `PATCH`| `/admin/reports/:id` | Update report resolution status and admin notes |
 
 ---
 
 ## 📐 Standard API Response Format
-
-All responses adhere to a consistent JSON format:
 
 ### Success Response
 ```json
@@ -443,43 +484,67 @@ All responses adhere to a consistent JSON format:
 {
   "success": false,
   "statusCode": 400,
-  "message": "Validation failed",
+  "message": "Validation error",
   "errors": [
     {
-      "field": "email",
-      "message": "Please provide a valid email address"
+      "field": "title",
+      "message": "Title must be at least 3 characters long"
     }
-  ],
-  "stack": "..." // Only present in development mode
+  ]
 }
 ```
 
 ---
 
-## 🔒 Security & Rate Limiting
+## 🔒 Security Features & Hardening
 
-- **HTTP Protection**: Headers set using `helmet` with customized `crossOriginResourcePolicy`.
-- **CORS Protection**: Origin validation with credentials support.
-- **Rate Limiters**:
-  - **General API**: `100` requests per 15-minute window per IP.
-  - **Auth Endpoints** (`/auth/login`, `/auth/register`): `10` requests per 15-minute window per IP to prevent brute-force attacks.
-  - **Upload Endpoints**: `20` upload requests per 15-minute window per IP.
-- **File Upload Safeguards**: MIME-type validation restricting resumes strictly to `.pdf`, `.doc`, `.docx` (max 5MB) and images to `.jpg`, `.jpeg`, `.png`, `.webp` (max 2MB).
-- **Zod Request Validation**: Every write and query endpoint strictly rejects unauthorized and malformed data schemas.
+1. **Zero Secret Fallbacks:** Tokens are signed and verified strictly against `process.env.JWT_SECRET`. Missing secrets halt application startup.
+2. **IDOR Mitigation:** Candidate profile inspection strictly verifies relationship authorization.
+3. **Mass Assignment Prevention:** Job modifications only write whitelisted fields; ownership and counts are immutable.
+4. **ReDoS Defense:** User regex inputs in job and user search are escaped with character length restrictions.
+5. **Private Resume Access:** Static resume directory browsing is disabled. Resumes require authenticated authorization.
+6. **Rate Limiting:** Protects `/api/` (300 req / 15 min), `/auth/` (20 req / 15 min), and file uploads (40 req / 15 min).
+7. **Strict CORS Policy:** Unknown origins are rejected in production.
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing & Quality Assurance
 
-The repository provides an automated endpoint testing suite validating authentication flows, job querying, application tracking, and role-based endpoints:
+Run the automated test suite testing all 27 critical business flows:
 
 ```bash
 npm test
 ```
+
+### Coverage Highlights:
+- Candidate registration, login, and bad password rejections
+- Profile updates and IDOR prevention
+- Recruiter job creation, mass assignment protection, and unauthorized role rejections
+- Advanced search, safe regex parsing, filtering, pagination
+- Candidate job application and duplicate submission prevention (409 Conflict)
+- Recruiter ATS status pipeline (`Applied` ➔ `Shortlisted` ➔ `Interview` ➔ `Selected`/`Rejected`)
+- In-app notification delivery
+- Application withdrawal handling
+- Job bookmarking (save/unsave)
+- Admin analytics, user blocking, job moderation, and abuse report resolution
+- In-memory cache fallback validation
+
+---
+
+## 🚀 Deployment Instructions
+
+### Production Checklist
+1. Ensure `NODE_ENV=production` in the production environment.
+2. Provide a strong, cryptographically generated `JWT_SECRET` (minimum 32 characters).
+3. Set `CLIENT_URL` to your production frontend domain (e.g. `https://myjobportal.com`).
+4. Set `MONGODB_URI` to your production MongoDB cluster (e.g. MongoDB Atlas).
+5. For hosting on **Render**, **Railway**, or **Heroku**:
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+   - Health Check Path: `/api/v1/health`
 
 ---
 
 ## 📄 License
 
 This project is licensed under the **ISC License**.
-
