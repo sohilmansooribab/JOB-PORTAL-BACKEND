@@ -261,7 +261,7 @@ const withdrawApplication = asyncHandler(async (req, res) => {
     throw ApiError.forbidden('You are not authorized to withdraw this application.');
   }
 
-  if (application.status !== 'Pending' && application.status !== 'Reviewing') {
+  if (!['Applied', 'Pending', 'Reviewing'].includes(application.status)) {
     throw ApiError.badRequest('Applications that have been processed cannot be withdrawn.');
   }
 
