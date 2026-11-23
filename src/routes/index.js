@@ -10,6 +10,26 @@ const reportRoutes = require('./report.routes');
 const savedJobRoutes = require('./savedJob.routes');
 const notificationRoutes = require('./notification.routes');
 
+// API root info
+router.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Welcome to Job Portal API v1',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/v1/health',
+      auth: '/api/v1/auth',
+      users: '/api/v1/users',
+      jobs: '/api/v1/jobs',
+      applications: '/api/v1/applications',
+      savedJobs: '/api/v1/saved-jobs',
+      notifications: '/api/v1/notifications',
+      reports: '/api/v1/reports',
+      admin: '/api/v1/admin',
+    },
+  });
+});
+
 // Health check endpoint
 router.get('/health', (req, res) => {
   res.status(200).json({
