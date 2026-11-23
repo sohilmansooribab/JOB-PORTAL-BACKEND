@@ -1,9 +1,11 @@
 const User = require('../models/User');
 const Job = require('../models/Job');
+const Application = require('../models/Application');
 const ApiError = require('../utils/apiError');
 const ApiResponse = require('../utils/apiResponse');
 const asyncHandler = require('../utils/asyncHandler');
 const path = require('path');
+const fs = require('fs');
 
 /**
  * @desc    Get user profile by ID
@@ -11,12 +13,36 @@ const path = require('path');
  * @access  Private
  */
 const getUserProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
+  const targetId = req.params.id;
+  const isSelf = req.user._id.toString() === targetId;
+  const isAdmin = req.user.role === 'admin';
+
+  const user = await User.findById(targetId);
   if (!user) {
     throw ApiError.notFound('User not found');
   }
 
-  return ApiResponse.success(res, { user }, 'User profile retrieved');
+  // Self or admin can view the full profile
+  if (isSelf || isAdmin) {
+    return ApiResponse.success(res, { user }, 'User profile retrieved');
+  }
+
+  // Recruiters can only view candidates who applied to one of their jobs
+  if (req.user.role === 'recruiter') {
+    const hasApplication = await Application.exists({
+      candidate: targetId,
+      recruiter: req.user._id,
+    });
+
+    if (!hasApplication) {
+      throw ApiError.forbidden('Access denied. You may only view candidates who have applied to your job postings.');
+    }
+
+    return ApiResponse.success(res, { user }, 'Applicant profile retrieved');
+  }
+
+  // Candidates cannot view other users' private profiles
+  throw ApiError.forbidden('Access denied. You are not authorized to view this profile.');
 });
 
 /**
@@ -229,6 +255,43 @@ const getRecruiterPublicProfile = asyncHandler(async (req, res) => {
   );
 });
 
+/**
+ * @desc    Securely download or view candidate resume
+ * @route   GET /api/v1/users/resume/:filename
+ * @access  Private (Candidate owner, Authorized Recruiter, Admin)
+ */
+const downloadResume = asyncHandler(async (req, res) => {
+  const { filename } = req.params;
+  const safeFilename = path.basename(filename);
+  const filePath = path.join(__dirname, '../../uploads/resumes', safeFilename);
+
+  if (!fs.existsSync(filePath)) {
+    throw ApiError.notFound('Resume file not found on server');
+  }
+
+  const isAdmin = req.user.role === 'admin';
+  const isCandidateOwner =
+    req.user.role === 'candidate' &&
+    req.user.candidateProfile?.resumeUrl?.includes(safeFilename);
+
+  if (isAdmin || isCandidateOwner) {
+    return res.sendFile(filePath);
+  }
+
+  if (req.user.role === 'recruiter') {
+    const hasApplication = await Application.exists({
+      recruiter: req.user._id,
+      resumeUrl: { $regex: safeFilename },
+    });
+
+    if (hasApplication) {
+      return res.sendFile(filePath);
+    }
+  }
+
+  throw ApiError.forbidden('Access denied. You are not authorized to view this resume.');
+});
+
 module.exports = {
   getUserProfile,
   updateProfileBasic,
@@ -237,4 +300,5 @@ module.exports = {
   uploadResume,
   uploadAvatar,
   getRecruiterPublicProfile,
+  downloadResume,
 };
