@@ -110,9 +110,10 @@ const login = asyncHandler(async (req, res) => {
  * @access  Public
  */
 const logout = asyncHandler(async (req, res) => {
-  res.cookie('token', 'none', {
-    expires: new Date(Date.now() + 5 * 1000),
+  res.clearCookie('token', {
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   });
 
   return ApiResponse.success(res, null, 'Logged out successfully');
