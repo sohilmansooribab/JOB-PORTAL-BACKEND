@@ -18,8 +18,16 @@ const errorHandler = (err, req, res, next) => {
     const statusCode = error.statusCode || (error.status ? error.status : 500);
     const message = error.message || 'Internal Server Error';
 
+    // Handle Zod Validation Error
+    if (error.name === 'ZodError' || error.issues) {
+      const messages = (error.issues || error.errors || []).map((err) => ({
+        field: Array.isArray(err.path) ? err.path.join('.') : String(err.path || ''),
+        message: err.message,
+      }));
+      error = ApiError.badRequest('Validation error', messages);
+    }
     // Handle Mongoose Bad ObjectId (CastError)
-    if (error.name === 'CastError') {
+    else if (error.name === 'CastError') {
       error = ApiError.badRequest(`Invalid resource identifier: ${error.value}`);
     }
     // Handle Mongoose Duplicate Key Error (Code 11000)
